@@ -14,8 +14,9 @@ import ImageFilter
 
 
 class Histogram(object):
-    def __init__(self, data):
+    def __init__(self, data, **kwargs):
         self.data = data
+        self.mode = kwargs.get("mode", "L")
         
         total = 0
         for value in data:
@@ -32,6 +33,9 @@ class Histogram(object):
     
     def get_total(self):
         return sum(self.data)
+
+    def get_avg(self):
+        return float(sum(self.data)) / float(len(self.data))
     
     def get_max(self):
         return max(self.data)
@@ -117,11 +121,35 @@ class Histogram(object):
         ex2 = ex2 / float(self.total)
         return ex2 - (ex * ex)
     
+    def plot(self, width = 200, height = 100, step = 4):
+        img = Image.new("RGBA", (width, height), (255, 255, 255, 50))
+        hist = self.discretize(width / step)
+        m = min(float(hist.get_max()), float(self.get_avg() + 2.0 * self.get_variance()))
+        norm = lambda c: min(height, int(float(10 * height) * (float(c) / m)))
+        data = img.load()
+        for color, count in enumerate(hist.data):
+            for y in range(norm(count)):
+                for x in range(step):
+                    data[(color * step) + x, height - y - 1] = (255, 0, 0, 130)
+        return img
+    
     @classmethod
-    def from_image_hist(cls, img):
+    def from_image_hist(cls, img, band = None):
+        if img.mode == "RGBA":
+            if band is None:
+                return cls(img.histogram()[:256 * 3], mode = img.mode)
+            else:
+                from_ = 256 * band
+                to = from_ + 256
+                return cls(img.histogram()[from_:to], mode = img.mode)
         if img.mode == "RGB":
-            return cls(img.histogram()[256:512])
-        return cls(img.histogram())
+            if band is None:
+                return cls(img.histogram()[256:512], mode = img.mode)
+            else:
+                from_ = 256 * band
+                to = from_ + 256
+                return cls(img.histogram()[from_:to], mode = img.mode)
+        return cls(img.histogram(), mode = img.mode)
     
     @classmethod
     def from_colors(cls, colors, channel = 1):
@@ -159,7 +187,11 @@ class BolidDetector(object):
         img = img.filter(ImageFilter.MedianFilter(5))
         if self.save_filtered and filename:
             filename = filename.split(".")[0] + "_filtered.jpg"
-            img.save(filename)
+            to_save = img.convert("RGBA")
+            hist = Histogram.from_image_hist(to_save, 1).plot(width = self.box[2] - self.box[0], step = 4)
+            w, h = hist.size
+            to_save.paste(hist, (0, 0, w, h), hist)
+            to_save.save(filename)
         return img
     
     def detect(self, img, filename = None):
@@ -169,23 +201,44 @@ class BolidDetector(object):
         hist = hist.discretize(buckets = self.bucket_count)
         
         value = sum([hist[i] for i in self.buckets])
-        return value > self.threshold, hist
+        if value < self.threshold:
+            return False, hist
+        
+        data = img.load()
+        w, h = img.size
+        
+        rows = []
+        for y in range(0, h, 3):
+            s = 0
+            for x in range(0, w, 4):
+                s += data[x, y]
+            rows.append(s)
+        
+        thr = max(rows) / 2
+        count = 0
+        for row in rows:
+            if row > thr: count += 1
+        
+        if count < 5:
+            return False, hist
+        
+        return True, hist
 
 
-def filter_img(img, hist = None):
-    assert img.mode == "RGB"
-    img = img.split()[1]
-    
-    return img.filter(ImageFilter.MedianFilter(5))
-
-
-def detect_activity(hist):
-    #hist = hist.remove_range(0, 50)
-    hist = hist.normalize()
-    hist = hist.discretize(buckets = 3)
-    
-    value = hist[-1] + hist[-2]
-    return value > 0.001, hist
+#def filter_img(img, hist = None):
+#    assert img.mode == "RGB"
+#    img = img.split()[1]
+#    
+#    return img.filter(ImageFilter.MedianFilter(5))
+#
+#
+#def detect_activity(hist):
+#    #hist = hist.remove_range(0, 50)
+#    hist = hist.normalize()
+#    hist = hist.discretize(buckets = 3)
+#    
+#    value = hist[-1] + hist[-2]
+#    return value > 0.001, hist
 
 
 def main():
@@ -201,10 +254,12 @@ def main():
                       help = "save filtered images")
     options, args = parser.parse_args()
     
-    norm = None
     for fn in args:
+        if fn.endswith("_filtered.jpg"): continue
         img = Image.open(fn)
         if img.mode != "RGB": continue
+        
+        #Histogram.from_image_hist(img).to_png().save(fn.split(".")[0] + "_hist.png")
         
         detector = BolidDetector(filename = fn, save_filtered = options.filtered)
         activity, hist = detector.detect(img, fn)
