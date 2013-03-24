@@ -252,6 +252,9 @@ def main():
     parser.add_option("-f", "--filtered", dest = "filtered",
                       action = "store_true", default = False,
                       help = "save filtered images")
+    parser.add_option("-i", "--inverted", dest = "inverted",
+                      action = "store_true", default = False,
+                      help = "invert the search - printout files with no bolid")
     options, args = parser.parse_args()
     
     for fn in args:
@@ -270,6 +273,9 @@ def main():
                 "b" if activity else "-",
                 "\t".join(map(lambda c: "%0.4f" % (c, ), hist)),
             )
+        elif options.inverted:
+            if not activity:
+                print fn
         elif activity:
             print fn
 
