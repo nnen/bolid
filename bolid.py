@@ -143,6 +143,35 @@ class Histogram(object):
         return cls.from_colors(colors)
 
 
+class BolidDetector(object):
+    def __init__(self, **kwargs):
+        self.save_filtered = kwargs.get("save_filtered", False)
+        
+        self.box = (400, 40, 600, 500)
+        self.bucket_count = 3
+        self.buckets = [-1, -2]
+        self.threshold = 0.001
+    
+    def filter_image(self, img, filename = None):
+        assert img.mode == "RGB"
+        img = img.crop(self.box)
+        img = img.split()[1]
+        img = img.filter(ImageFilter.MedianFilter(5))
+        if self.save_filtered and filename:
+            filename = filename.split(".")[0] + "_filtered.jpg"
+            img.save(filename)
+        return img
+    
+    def detect(self, img, filename = None):
+        img = self.filter_image(img, filename)
+        hist = Histogram.from_image_hist(img)
+        hist = hist.normalize()
+        hist = hist.discretize(buckets = self.bucket_count)
+        
+        value = sum([hist[i] for i in self.buckets])
+        return value > self.threshold, hist
+
+
 def filter_img(img, hist = None):
     assert img.mode == "RGB"
     img = img.split()[1]
@@ -164,9 +193,9 @@ def main():
     parser.add_option("-v", "--verbose", dest = "verbose",
                       action = "store_true", default = False,
                       help = "print out more information")
-    parser.add_option("-s", "--show", dest = "show",
-                      action = "store_true", default = False,
-                      help = "show images with detected activity")
+    #parser.add_option("-s", "--show", dest = "show",
+    #                  action = "store_true", default = False,
+    #                  help = "show images with detected activity")
     parser.add_option("-f", "--filtered", dest = "filtered",
                       action = "store_true", default = False,
                       help = "save filtered images")
@@ -174,16 +203,11 @@ def main():
     
     norm = None
     for fn in args:
-        orig_img = Image.open(fn)
-        if orig_img.mode != "RGB": continue
-        img = orig_img.crop((400, 40, 600, 500))
+        img = Image.open(fn)
+        if img.mode != "RGB": continue
         
-        img = filter_img(img)
-        if options.filtered:
-            img.save("%s_filtered.jpg" % (fn[:-4]))
-        
-        hist = Histogram.from_image_hist(img)
-        activity, hist = detect_activity(hist)
+        detector = BolidDetector(filename = fn, save_filtered = options.filtered)
+        activity, hist = detector.detect(img, fn)
         
         if options.verbose:
             print "%s\t%s\t%s" % (
@@ -193,9 +217,6 @@ def main():
             )
         elif activity:
             print fn
-        
-        if options.show and activity:
-            orig_img.show()
 
 
 if __name__ == "__main__":
