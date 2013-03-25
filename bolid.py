@@ -8,9 +8,35 @@ Author: Jan Milík <milikjan@fit.cvut.cz>
 
 import sys
 import optparse
+import math
 
 import Image
 import ImageFilter
+
+
+class Stats(object):
+    def __init__(self, values):
+        values = list(values)
+        self.values = values
+        
+        total = 0.0
+        ex2 = 0.0
+        for v in values:
+            total += float(v)
+            ex2 += float(v * v)
+        
+        n = float(len(values))
+        ex2 = ex2 / n
+        
+        self.mean = total / float(len(values))
+        self.var = ex2 - (self.mean ** 2)
+        self.stddev = math.sqrt(self.var)
+        self.minv = min(values)
+        self.maxv = max(values)
+
+
+def get_row(table, y, from_ = 0, to = 1):
+    return (table[x, y] for x in range(from_, to))
 
 
 class Histogram(object):
@@ -185,10 +211,23 @@ class BolidDetector(object):
     def __init__(self, **kwargs):
         self.save_filtered = kwargs.get("save_filtered", False)
         
-        self.box = (400, 40, 600, 500)
-        self.bucket_count = 3
-        self.buckets = [-1, -2]
-        self.threshold = 0.001
+        self.config = self.get_default_config()
+        
+        #self.box = (400, 40, 600, 500)
+        #self.bucket_count = 3
+        #self.buckets = [-1, -2]
+        #self.threshold = 0.001
+    
+    def __getattr__(self, name):
+        return self.config[name]
+    
+    def get_default_config(self):
+        return {
+            "box": (400, 40, 600, 500),
+            "bucket_count": 3,
+            "buckets": [-1, -2],
+            "threshold": 0.001,
+        }
     
     def filter_image(self, img, filename = None):
         assert img.mode == "RGB"
@@ -204,35 +243,112 @@ class BolidDetector(object):
             to_save.save(filename)
         return img
     
-    def detect(self, img, filename = None):
-        img = self.filter_image(img, filename)
-        hist = Histogram.from_image_hist(img)
-        hist = hist.discretize(buckets = self.bucket_count)
-        hist = hist.normalize()
+    def _peak_freq(self, values):
+        maxi = max(values)
+        first = 0
+        last = 0
         
-        value = sum([hist[i] for i in self.buckets])
-        if value < self.threshold:
-            return Classes.NONE, hist
+        freqs = [f for f, v in enumerate(values) if v >= maxi]
+        if len(freqs) > 1:
+            return freqs[len(freqs) / 2]
+        return freqs[0]
+    
+    def _noise_comparison(self, img, filename):
+        assert img.mode == "RGB"
+        #img = img.crop(self.box)
+        #img = img.filter(ImageFilter.MedianFilter(3))
+        img.load()
+        img = img.split()[1]
         
         data = img.load()
-        w, h = img.size
         
-        rows = []
-        for y in range(0, h, 3):
-            s = 0
-            for x in range(0, w, 4):
-                s += data[x, y]
-            rows.append(s)
+        w = self.box[2] - self.box[0]
+        left = self.box[0]
+        right = self.box[2]
         
-        thr = max(rows) / 2
-        count = 0
-        for row in rows:
-            if row > thr: count += 1
+        signal = 0
+        time = 0
+        max_signal = 0
+        max_time = 0
         
-        if count < 5:
-            return Classes.ACTIVITY, hist
+        for y in range(self.box[1], self.box[3]):
+            noise = Stats(get_row(data, y, left - w, right - w))
+            
+            activity = list(get_row(data, y, left, right))
+            peakf = self._peak_freq(activity)
+            
+            activity = Stats(get_row(data, y, left + peakf - 20, left + peakf + 20))
+            
+            s = max(activity.mean - noise.mean, 0)
+            max_signal = max(max_signal, s)
+            
+            if s > 10:
+                if signal > 0:
+                    time += 1
+                else:
+                    signal = 1
+                    max_time = max(max_time, time)
+                    time = 0
+            else:
+                if signal > 0:
+                    signal -= 1
+                    if signal == 0:
+                        max_time = max(max_time, time)
+                        time = 0
+                    else:
+                        time += 1
+            
+            max_time = max(max_time, time)
+            
+            if self.save_filtered:
+                for x in range(left, right):
+                    data[x, y] = max(data[x, y] - noise.mean, 0)
+                for x in range(left, left + 5):
+                    data[x, y] = 255 if signal > 0 else 0
         
-        return Classes.BOLID, hist
+        if self.save_filtered and filename:
+            filename = filename.split(".")[0] + "_filtered.png"
+            img.save(filename)
+        
+        self.max_time = max_time
+        
+        if max_time > 5:
+            return Classes.BOLID
+        elif max_time > 0:
+            return Classes.ACTIVITY
+        return Classes.NONE
+    
+    def detect(self, img, filename = None):
+        return self._noise_comparison(img, filename)
+        
+        #img = self.filter_image(img, filename)
+        #hist = Histogram.from_image_hist(img)
+        #hist = hist.discretize(buckets = self.bucket_count)
+        #hist = hist.normalize()
+        #
+        #value = sum([hist[i] for i in self.buckets])
+        #if value < self.threshold:
+        #    return Classes.NONE, hist
+        #
+        #data = img.load()
+        #w, h = img.size
+        #
+        #rows = []
+        #for y in range(0, h, 3):
+        #    s = 0
+        #    for x in range(0, w, 4):
+        #        s += data[x, y]
+        #    rows.append(s)
+        #
+        #thr = max(rows) / 2
+        #count = 0
+        #for row in rows:
+        #    if row > thr: count += 1
+        #
+        #if count < 5:
+        #    return Classes.ACTIVITY, hist
+        #
+        #return Classes.BOLID, hist
 
 
 def main():
@@ -243,6 +359,9 @@ def main():
     parser.add_option("-f", "--filtered", dest = "filtered",
                       action = "store_true", default = False,
                       help = "save filtered images")
+    parser.add_option("-a", "--activity", dest = "activity",
+                      action = "store_true", default = False,
+                      help = "show only files with activity other than bolids")
     parser.add_option("-i", "--inverted", dest = "inverted",
                       action = "store_true", default = False,
                       help = "invert the search - printout files with no bolid")
@@ -254,18 +373,21 @@ def main():
         if img.mode != "RGB": continue
         
         detector = BolidDetector(filename = fn, save_filtered = options.filtered)
-        activity, hist = detector.detect(img, fn)
+        activity = detector.detect(img, fn)
         
         if options.verbose:
-            print "%s\t%s\t%s" % (
+            print "%s\t%s %4d" % (
                 fn,
                 {
                     Classes.BOLID: "B",
                     Classes.ACTIVITY: "a",
                     Classes.NONE: " ",
                 }.get(activity, " "),
-                "\t".join(map(lambda c: "%0.4f" % (c, ), hist)),
+                detector.max_time,
             )
+        elif options.activity:
+            if bool(activity != Classes.NONE and activity != Classes.BOLID) != bool(options.inverted):
+                print fn
         elif options.inverted:
             if activity != Classes.BOLID:
                 print fn
