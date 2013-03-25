@@ -56,12 +56,14 @@ class Histogram(object):
             for w in range(width):
                 count = next(e)
                 total += count
-            result[bucket] = total
+            result[bucket] = float(total) / float(width)
         
         total = 0
+        width = 0
         for count in e:
             total += count
-        result[-1] = total
+            width += 1
+        result[-1] = float(total) / float(width)
         
         return Histogram(result)
     
@@ -171,6 +173,14 @@ class Histogram(object):
         return cls.from_colors(colors)
 
 
+def enum(*args, **kwargs):
+    enums = dict(zip(args, range(len(args))), **kwargs)
+    return type("Enum", (), enums)
+
+
+Classes = enum("BOLID", "ACTIVITY", "NONE")
+
+
 class BolidDetector(object):
     def __init__(self, **kwargs):
         self.save_filtered = kwargs.get("save_filtered", False)
@@ -197,12 +207,12 @@ class BolidDetector(object):
     def detect(self, img, filename = None):
         img = self.filter_image(img, filename)
         hist = Histogram.from_image_hist(img)
-        hist = hist.normalize()
         hist = hist.discretize(buckets = self.bucket_count)
+        hist = hist.normalize()
         
         value = sum([hist[i] for i in self.buckets])
         if value < self.threshold:
-            return False, hist
+            return Classes.NONE, hist
         
         data = img.load()
         w, h = img.size
@@ -220,9 +230,9 @@ class BolidDetector(object):
             if row > thr: count += 1
         
         if count < 5:
-            return False, hist
+            return Classes.ACTIVITY, hist
         
-        return True, hist
+        return Classes.BOLID, hist
 
 
 #def filter_img(img, hist = None):
@@ -270,13 +280,18 @@ def main():
         if options.verbose:
             print "%s\t%s\t%s" % (
                 fn,
-                "b" if activity else "-",
+                {
+                    Classes.BOLID: "B",
+                    Classes.ACTIVITY: "a",
+                    Classes.NONE: " ",
+                }.get(activity, " "),
+                #"b" if activity else "-",
                 "\t".join(map(lambda c: "%0.4f" % (c, ), hist)),
             )
         elif options.inverted:
-            if not activity:
+            if activity != Classes.BOLID:
                 print fn
-        elif activity:
+        elif activity == Classes.BOLID:
             print fn
 
 
