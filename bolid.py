@@ -235,30 +235,11 @@ class BolidDetector(object):
         return Classes.BOLID, hist
 
 
-#def filter_img(img, hist = None):
-#    assert img.mode == "RGB"
-#    img = img.split()[1]
-#    
-#    return img.filter(ImageFilter.MedianFilter(5))
-#
-#
-#def detect_activity(hist):
-#    #hist = hist.remove_range(0, 50)
-#    hist = hist.normalize()
-#    hist = hist.discretize(buckets = 3)
-#    
-#    value = hist[-1] + hist[-2]
-#    return value > 0.001, hist
-
-
 def main():
     parser = optparse.OptionParser()
     parser.add_option("-v", "--verbose", dest = "verbose",
                       action = "store_true", default = False,
                       help = "print out more information")
-    #parser.add_option("-s", "--show", dest = "show",
-    #                  action = "store_true", default = False,
-    #                  help = "show images with detected activity")
     parser.add_option("-f", "--filtered", dest = "filtered",
                       action = "store_true", default = False,
                       help = "save filtered images")
@@ -272,8 +253,6 @@ def main():
         img = Image.open(fn)
         if img.mode != "RGB": continue
         
-        #Histogram.from_image_hist(img).to_png().save(fn.split(".")[0] + "_hist.png")
-        
         detector = BolidDetector(filename = fn, save_filtered = options.filtered)
         activity, hist = detector.detect(img, fn)
         
@@ -285,7 +264,6 @@ def main():
                     Classes.ACTIVITY: "a",
                     Classes.NONE: " ",
                 }.get(activity, " "),
-                #"b" if activity else "-",
                 "\t".join(map(lambda c: "%0.4f" % (c, ), hist)),
             )
         elif options.inverted:
