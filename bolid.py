@@ -9,9 +9,15 @@ Author: Jan Milík <milikjan@fit.cvut.cz>
 import sys
 import optparse
 import math
+import logging
+#from logging.handlers import FileHandler
 
 import Image
 import ImageFilter
+
+
+LOGGER = logging.getLogger("bolid") 
+logging.basicConfig(level = logging.INFO)
 
 
 class Stats(object):
@@ -254,9 +260,14 @@ class BolidDetector(object):
         return freqs[0]
     
     def _noise_comparison(self, img, filename):
-        assert img.mode == "RGB"
-        #img = img.crop(self.box)
-        #img = img.filter(ImageFilter.MedianFilter(3))
+        if img.mode != "RGB":
+            raise ValueError("Image \"%s\" has invalid mode (%s, expected RGB)." % (img.mode, ))
+        
+        w, h = img.size
+        if self.box[2] >= w or self.box[3] >= h:
+            LOGGER.error()
+            raise ValueError("Image \"%s\" has invalid size (%r)." % (filename, img.size, ))
+        
         img.load()
         img = img.split()[1]
         
@@ -305,6 +316,13 @@ class BolidDetector(object):
                     data[x, y] = max(data[x, y] - noise.mean, 0)
                 for x in range(left, left + 5):
                     data[x, y] = 255 if signal > 0 else 0
+                data[left + peakf - 3, y] = 0
+                data[left + peakf - 2, y] = 0
+                data[left + peakf - 1, y] = 0
+                data[left + peakf, y] = 255
+                data[left + peakf + 1, y] = 0
+                data[left + peakf + 2, y] = 0
+                data[left + peakf + 3, y] = 0
         
         if self.save_filtered and filename:
             filename = filename.split(".")[0] + "_filtered.png"
@@ -351,6 +369,43 @@ class BolidDetector(object):
         #return Classes.BOLID, hist
 
 
+def do_file(fn, options):
+    if not (fn.endswith(".jpg") or fn.endswith(".jpeg")):
+        LOGGER.warning("Skipping %s - not a JPEG image.", fn)
+        return
+    
+    if fn.endswith("_filtered.jpg"):
+        LOGGER.warning("Skipping %s - filtered image.", fn)
+        return
+    
+    img = Image.open(fn)
+    if img.mode != "RGB":
+        LOGGER.warning("Skipping %s - not an RGB image.", fn)
+        return
+    
+    detector = BolidDetector(filename = fn, save_filtered = options.filtered)
+    activity = detector.detect(img, fn)
+    
+    if options.verbose:
+        print "%s\t%s %4d" % (
+            fn,
+            {
+                Classes.BOLID: "B",
+                Classes.ACTIVITY: "a",
+                Classes.NONE: " ",
+            }.get(activity, " "),
+            detector.max_time,
+        )
+    elif options.activity:
+        if bool(activity != Classes.NONE and activity != Classes.BOLID) != bool(options.inverted):
+            print fn
+    elif options.inverted:
+        if activity != Classes.BOLID:
+            print fn
+    elif activity == Classes.BOLID:
+        print fn
+
+
 def main():
     parser = optparse.OptionParser()
     parser.add_option("-v", "--verbose", dest = "verbose",
@@ -365,34 +420,47 @@ def main():
     parser.add_option("-i", "--inverted", dest = "inverted",
                       action = "store_true", default = False,
                       help = "invert the search - printout files with no bolid")
+    parser.add_option("-l", "--log-file", dest = "log_file",
+                      metavar = "LOG_FILE", default = None,
+                      help = "append log to file LOG_FILE")
     options, args = parser.parse_args()
     
+    if options.log_file is not None:
+        handler = logging.FileHandler(options.log_file)
+        handler.setFormatter(logging.Formatter("%(asctime)s   %(levelname)s   [%(name)s]   %(message)s"))
+        logging.getLogger().addHandler(handler)
+    
     for fn in args:
-        if fn.endswith("_filtered.jpg"): continue
-        img = Image.open(fn)
-        if img.mode != "RGB": continue
+        try:
+            do_file(fn, options)
+        except Exception, e:
+            LOGGER.exception("Exception occured while processing %s!", fn)
         
-        detector = BolidDetector(filename = fn, save_filtered = options.filtered)
-        activity = detector.detect(img, fn)
-        
-        if options.verbose:
-            print "%s\t%s %4d" % (
-                fn,
-                {
-                    Classes.BOLID: "B",
-                    Classes.ACTIVITY: "a",
-                    Classes.NONE: " ",
-                }.get(activity, " "),
-                detector.max_time,
-            )
-        elif options.activity:
-            if bool(activity != Classes.NONE and activity != Classes.BOLID) != bool(options.inverted):
-                print fn
-        elif options.inverted:
-            if activity != Classes.BOLID:
-                print fn
-        elif activity == Classes.BOLID:
-            print fn
+        #if fn.endswith("_filtered.jpg"): continue
+        #img = Image.open(fn)
+        #if img.mode != "RGB": continue
+        #
+        #detector = BolidDetector(filename = fn, save_filtered = options.filtered)
+        #activity = detector.detect(img, fn)
+        #
+        #if options.verbose:
+        #    print "%s\t%s %4d" % (
+        #        fn,
+        #        {
+        #            Classes.BOLID: "B",
+        #            Classes.ACTIVITY: "a",
+        #            Classes.NONE: " ",
+        #        }.get(activity, " "),
+        #        detector.max_time,
+        #    )
+        #elif options.activity:
+        #    if bool(activity != Classes.NONE and activity != Classes.BOLID) != bool(options.inverted):
+        #        print fn
+        #elif options.inverted:
+        #    if activity != Classes.BOLID:
+        #        print fn
+        #elif activity == Classes.BOLID:
+        #    print fn
 
 
 if __name__ == "__main__":
