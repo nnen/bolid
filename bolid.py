@@ -6,6 +6,8 @@ Author: Jan Milík <milikjan@fit.cvut.cz>
 """
 
 
+import os
+import os.path as path
 import sys
 import optparse
 import math
@@ -17,7 +19,7 @@ import ImageFilter
 
 
 LOGGER = logging.getLogger("bolid") 
-logging.basicConfig(level = logging.INFO)
+#logging.basicConfig(level = logging.INFO)
 
 
 class Stats(object):
@@ -370,6 +372,10 @@ class BolidDetector(object):
 
 
 def do_file(fn, options):
+    if path.isdir(fn):
+        do_dir(fn, options)
+        return
+    
     if not (fn.endswith(".jpg") or fn.endswith(".jpeg")):
         LOGGER.warning("Skipping %s - not a JPEG image.", fn)
         return
@@ -406,8 +412,18 @@ def do_file(fn, options):
         print fn
 
 
+def do_dir(fn, options):
+    for entry in (path.join(fn, entry) for entry in os.listdir(fn)):
+        do_file(entry, options)
+
+
 def main():
-    parser = optparse.OptionParser()
+    parser = optparse.OptionParser(
+        usage = "usage: %prog [FILES]",
+        description = "By default, checks each file in FILES for a bolid " +
+        "and if one is found, prints out the filename.  If file is a directory, " +
+        "it is traversed recursively."
+    )
     parser.add_option("-v", "--verbose", dest = "verbose",
                       action = "store_true", default = False,
                       help = "print out more information")
