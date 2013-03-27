@@ -12,7 +12,6 @@ import sys
 import optparse
 import math
 import logging
-#from logging.handlers import FileHandler
 
 import Image
 import ImageFilter
@@ -221,11 +220,6 @@ class BolidDetector(object):
         
         self.config = self.get_default_config()
         
-        #self.box = (400, 40, 600, 500)
-        #self.bucket_count = 3
-        #self.buckets = [-1, -2]
-        #self.threshold = 0.001
-    
     def __getattr__(self, name):
         return self.config[name]
     
@@ -341,35 +335,6 @@ class BolidDetector(object):
     def detect(self, img, filename = None):
         return self._noise_comparison(img, filename)
         
-        #img = self.filter_image(img, filename)
-        #hist = Histogram.from_image_hist(img)
-        #hist = hist.discretize(buckets = self.bucket_count)
-        #hist = hist.normalize()
-        #
-        #value = sum([hist[i] for i in self.buckets])
-        #if value < self.threshold:
-        #    return Classes.NONE, hist
-        #
-        #data = img.load()
-        #w, h = img.size
-        #
-        #rows = []
-        #for y in range(0, h, 3):
-        #    s = 0
-        #    for x in range(0, w, 4):
-        #        s += data[x, y]
-        #    rows.append(s)
-        #
-        #thr = max(rows) / 2
-        #count = 0
-        #for row in rows:
-        #    if row > thr: count += 1
-        #
-        #if count < 5:
-        #    return Classes.ACTIVITY, hist
-        #
-        #return Classes.BOLID, hist
-
 
 def do_file(fn, options):
     if path.isdir(fn):
@@ -451,32 +416,6 @@ def main():
             do_file(fn, options)
         except Exception, e:
             LOGGER.exception("Exception occured while processing %s!", fn)
-        
-        #if fn.endswith("_filtered.jpg"): continue
-        #img = Image.open(fn)
-        #if img.mode != "RGB": continue
-        #
-        #detector = BolidDetector(filename = fn, save_filtered = options.filtered)
-        #activity = detector.detect(img, fn)
-        #
-        #if options.verbose:
-        #    print "%s\t%s %4d" % (
-        #        fn,
-        #        {
-        #            Classes.BOLID: "B",
-        #            Classes.ACTIVITY: "a",
-        #            Classes.NONE: " ",
-        #        }.get(activity, " "),
-        #        detector.max_time,
-        #    )
-        #elif options.activity:
-        #    if bool(activity != Classes.NONE and activity != Classes.BOLID) != bool(options.inverted):
-        #        print fn
-        #elif options.inverted:
-        #    if activity != Classes.BOLID:
-        #        print fn
-        #elif activity == Classes.BOLID:
-        #    print fn
 
 
 if __name__ == "__main__":
