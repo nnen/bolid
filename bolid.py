@@ -261,7 +261,6 @@ class BolidDetector(object):
         
         w, h = img.size
         if self.box[2] >= w or self.box[3] >= h:
-            LOGGER.error()
             raise ValueError("Image \"%s\" has invalid size (%r)." % (filename, img.size, ))
         
         img.load()
@@ -378,8 +377,15 @@ def do_file(fn, options):
 
 
 def do_dir(fn, options):
-    for entry in (path.join(fn, entry) for entry in os.listdir(fn)):
-        do_file(entry, options)
+    do_files((path.join(fn, entry) for entry in os.listdir(fn)), options)
+
+
+def do_files(files, options):
+    for fn in files:
+        try:
+            do_file(fn, options)
+        except Exception, e:
+            LOGGER.exception("Exception occured while processing %s!", fn)
 
 
 def main():
@@ -411,11 +417,13 @@ def main():
         handler.setFormatter(logging.Formatter("%(asctime)s   %(levelname)s   [%(name)s]   %(message)s"))
         logging.getLogger().addHandler(handler)
     
-    for fn in args:
-        try:
-            do_file(fn, options)
-        except Exception, e:
-            LOGGER.exception("Exception occured while processing %s!", fn)
+    do_files(args, options)
+    
+    #for fn in args:
+    #    try:
+    #        do_file(fn, options)
+    #    except Exception, e:
+    #        LOGGER.exception("Exception occured while processing %s!", fn)
 
 
 if __name__ == "__main__":
